@@ -26,6 +26,9 @@ type SecretStoreSpec struct {
 	// +optional
 	Controller string `json:"controller"`
 
+	// Only allow usage of the secret store in matching namespaces
+	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector"`
+
 	// Used to configure the provider. Only one provider may be set
 	Provider *SecretStoreProvider `json:"provider"`
 

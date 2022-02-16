@@ -44,28 +44,29 @@ import (
 const (
 	requeueAfter = time.Second * 30
 
-	errGetES                 = "could not get ExternalSecret"
-	errReconcileES           = "could not reconcile ExternalSecret"
-	errPatchStatus           = "unable to patch status"
-	errGetSecretStore        = "could not get SecretStore %q, %w"
-	errGetClusterSecretStore = "could not get ClusterSecretStore %q, %w"
-	errStoreRef              = "could not get store reference"
-	errStoreProvider         = "could not get store provider"
-	errStoreClient           = "could not get provider client"
-	errGetExistingSecret     = "could not get existing secret: %w"
-	errCloseStoreClient      = "could not close provider client"
-	errSetCtrlReference      = "could not set ExternalSecret controller reference: %w"
-	errFetchTplFrom          = "error fetching templateFrom data: %w"
-	errGetSecretData         = "could not get secret data from provider: %w"
-	errApplyTemplate         = "could not apply template: %w"
-	errExecTpl               = "could not execute template: %w"
-	errPolicyMergeNotFound   = "the desired secret %s was not found. With creationPolicy=Merge the secret won't be created"
-	errPolicyMergeGetSecret  = "unable to get secret %s: %w"
-	errPolicyMergeMutate     = "unable to mutate secret %s: %w"
-	errPolicyMergePatch      = "unable to patch secret %s: %w"
-	errGetSecretKey          = "key %q from ExternalSecret %q: %w"
-	errTplCMMissingKey       = "error in configmap %s: missing key %s"
-	errTplSecMissingKey      = "error in secret %s: missing key %s"
+	errGetES                    = "could not get ExternalSecret"
+	errReconcileES              = "could not reconcile ExternalSecret"
+	errPatchStatus              = "unable to patch status"
+	errGetSecretStore           = "could not get SecretStore %q, %w"
+	errGetClusterSecretStore    = "could not get ClusterSecretStore %q, %w"
+	errDeniedClusterSecretStore = "access denied to ClusterSecretStore %q"
+	errStoreRef                 = "could not get store reference"
+	errStoreProvider            = "could not get store provider"
+	errStoreClient              = "could not get provider client"
+	errGetExistingSecret        = "could not get existing secret: %w"
+	errCloseStoreClient         = "could not close provider client"
+	errSetCtrlReference         = "could not set ExternalSecret controller reference: %w"
+	errFetchTplFrom             = "error fetching templateFrom data: %w"
+	errGetSecretData            = "could not get secret data from provider: %w"
+	errApplyTemplate            = "could not apply template: %w"
+	errExecTpl                  = "could not execute template: %w"
+	errPolicyMergeNotFound      = "the desired secret %s was not found. With creationPolicy=Merge the secret won't be created"
+	errPolicyMergeGetSecret     = "unable to get secret %s: %w"
+	errPolicyMergeMutate        = "unable to mutate secret %s: %w"
+	errPolicyMergePatch         = "unable to patch secret %s: %w"
+	errGetSecretKey             = "key %q from ExternalSecret %q: %w"
+	errTplCMMissingKey          = "error in configmap %s: missing key %s"
+	errTplSecMissingKey         = "error in secret %s: missing key %s"
 )
 
 // Reconciler reconciles a ExternalSecret object.
@@ -378,6 +379,9 @@ func (r *Reconciler) getStore(ctx context.Context, externalSecret *esv1alpha1.Ex
 		if err != nil {
 			return nil, fmt.Errorf(errGetClusterSecretStore, ref.Name, err)
 		}
+		if r.checkClusterStoreAccessDenied(ctx, store, *externalSecret) {
+			return nil, fmt.Errorf(errDeniedClusterSecretStore, ref.Name)
+		}
 
 		return &store, nil
 	}
@@ -424,4 +428,17 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, opts controller.Options)
 		For(&esv1alpha1.ExternalSecret{}).
 		Owns(&v1.Secret{}).
 		Complete(r)
+}
+
+func (r *Reconciler) checkClusterStoreAccessDenied(ctx context.Context, store esv1alpha1.ClusterSecretStore, externalSecret esv1alpha1.ExternalSecret) bool {
+	log := r.Log.WithValues("ClusterSecretStore", store.GetNamespacedName())
+	selector, _ := metav1.LabelSelectorAsSelector(store.Spec.NamespaceSelector)
+	opts := client.ListOptions{
+		LabelSelector: selector,
+	}
+	nsList := v1.NamespaceList{}
+	r.List(ctx, &nsList, &opts)
+	reqNS := externalSecret.ObjectMeta.Namespace
+	log.V(1).Info("checking access for ES in %s", reqNS)
+	return true
 }
